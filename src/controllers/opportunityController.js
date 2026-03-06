@@ -1,5 +1,5 @@
 const { body, param, query } = require('express-validator');
-const { opportunityRepository } = require('../repositories');
+const { opportunityRepository, opportunityStageHistoryRepository } = require('../repositories');
 const { logAudit } = require('../services/auditService');
 const ApiError = require('../utils/apiError');
 const { toCsv } = require('../utils/csv');
@@ -60,6 +60,35 @@ const moveStageValidation = [
 ];
 
 const deleteOpportunityValidation = [param('id').isMongoId().withMessage('Opportunity id must be valid')];
+const stageHistoryValidation = [param('id').isMongoId().withMessage('Opportunity id must be valid')];
+
+function hasStageChanged(beforeStageId, afterStageId) {
+  if (!beforeStageId || !afterStageId) {
+    return false;
+  }
+  return String(beforeStageId) !== String(afterStageId);
+}
+
+async function recordStageHistoryIfChanged(
+  { tenantId, opportunityId, beforeStageId, afterStageId, actorId },
+  deps = {}
+) {
+  const repo = deps.opportunityStageHistoryRepository || opportunityStageHistoryRepository;
+
+  if (!hasStageChanged(beforeStageId, afterStageId)) {
+    return false;
+  }
+
+  await repo.create(tenantId, {
+    opportunityId,
+    oldStage: beforeStageId,
+    newStage: afterStageId,
+    changedBy: actorId,
+    changedAt: new Date()
+  });
+
+  return true;
+}
 
 async function listOpportunities(req, res, next) {
   try {
@@ -107,6 +136,14 @@ async function updateOpportunity(req, res, next) {
     if (!before) throw new ApiError(404, 'Opportunity not found');
 
     const opportunity = await opportunityRepository.updateById(req.tenantId, req.params.id, req.body);
+    await recordStageHistoryIfChanged({
+      tenantId: req.tenantId,
+      opportunityId: opportunity._id,
+      beforeStageId: before.stageId,
+      afterStageId: opportunity.stageId,
+      actorId: req.user._id
+    });
+
     await logAudit({
       tenantId: req.tenantId,
       actorId: req.user._id,
@@ -125,9 +162,19 @@ async function moveOpportunityStage(req, res, next) {
   try {
     const before = await opportunityRepository.findById(req.tenantId, req.params.id);
     if (!before) throw new ApiError(404, 'Opportunity not found');
+    if (!hasStageChanged(before.stageId, req.body.stageId)) {
+      return res.json(before);
+    }
 
     const opportunity = await opportunityRepository.updateById(req.tenantId, req.params.id, {
       stageId: req.body.stageId
+    });
+    await recordStageHistoryIfChanged({
+      tenantId: req.tenantId,
+      opportunityId: opportunity._id,
+      beforeStageId: before.stageId,
+      afterStageId: opportunity.stageId,
+      actorId: req.user._id
     });
 
     await logAudit({
@@ -143,6 +190,18 @@ async function moveOpportunityStage(req, res, next) {
     });
 
     res.json(opportunity);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function listStageHistory(req, res, next) {
+  try {
+    const opportunity = await opportunityRepository.findById(req.tenantId, req.params.id);
+    if (!opportunity) throw new ApiError(404, 'Opportunity not found');
+
+    const items = await opportunityStageHistoryRepository.listByOpportunity(req.tenantId, req.params.id);
+    res.json(items);
   } catch (error) {
     next(error);
   }
@@ -212,10 +271,16 @@ module.exports = {
   updateOpportunityValidation,
   moveStageValidation,
   deleteOpportunityValidation,
+  stageHistoryValidation,
   listOpportunities,
   exportOpportunities,
   createOpportunity,
   updateOpportunity,
   moveOpportunityStage,
-  deleteOpportunity
+  listStageHistory,
+  deleteOpportunity,
+  __test: {
+    hasStageChanged,
+    recordStageHistoryIfChanged
+  }
 };
