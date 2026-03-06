@@ -8,11 +8,13 @@ const {
   updateOpportunityValidation,
   moveStageValidation,
   deleteOpportunityValidation,
+  stageHistoryValidation,
   listOpportunities,
   exportOpportunities,
   createOpportunity,
   updateOpportunity,
   moveOpportunityStage,
+  listStageHistory,
   deleteOpportunity
 } = require('../controllers/opportunityController');
 
@@ -20,6 +22,7 @@ const router = express.Router();
 
 router.get('/', auth, requirePermission('OPPORTUNITY_READ'), listOpportunityValidation, validate, listOpportunities);
 router.get('/export', auth, requirePermission('OPPORTUNITY_READ'), listOpportunityValidation, validate, exportOpportunities);
+router.get('/:id/stage-history', auth, requirePermission('OPPORTUNITY_READ'), stageHistoryValidation, validate, listStageHistory);
 router.post(
   '/',
   auth,

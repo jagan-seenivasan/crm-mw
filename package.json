@@ -10,7 +10,7 @@
     "start:prod": "cross-env NODE_ENV=production ENV_FILE=.env.production node src/server.js",
     "seed": "node scripts/seed.js",
     "fix:stage-indexes": "node scripts/fix-stage-indexes.js",
-    "test": "node --test src/controllers/activityTimelineController.test.js"
+    "test": "node src/controllers/activityTimelineController.test.js && node src/controllers/opportunityController.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
